@@ -24,3 +24,14 @@ If you have **MinGW** installed, you can compile the program using the following
 
 ```bash
 g++ -o discord_hotkey.exe discord_hotkey.cpp -mwindows -municode -luser32 -lshell32 -ladvapi32
+```
+
+## Usage
+
+1. **Compile the program** using the above command.
+2. **Run the program**. An icon will appear in the system tray.
+3. **Close the program** by right-clicking the system tray icon and selecting "Exit".
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
