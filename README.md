@@ -32,6 +32,14 @@ g++ -o discord_hotkey.exe discord_hotkey.cpp -mwindows -municode -luser32 -lshel
 2. **Run the program**. An icon will appear in the system tray.
 3. **Close the program** by right-clicking the system tray icon and selecting "Exit".
 
+## Contributing
+
+Contributions are welcome! If you'd like to contribute to this project, please submit your changes via **Pull Requests**. 
+
+Make sure to follow the existing coding style and provide clear commit messages. All contributions will be reviewed before being merged.
+
+Thank you for your contributions!
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
