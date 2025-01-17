@@ -1,18 +1,23 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <commctrl.h>
+#pragma comment(lib, "comctl32.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAYICON 1
 #define ID_EXIT 2000
+#define ID_SHOW 2001
+#define ID_HOTKEY 100
+#define ID_APPLY 101
 
 NOTIFYICONDATAW nid = {0};
-HWND hwnd;
+HWND hwnd, hHotkey, hApply;
 bool isRunning = true;
 HHOOK keyboardHook;
 DWORD lastKeyPress = 0;
 bool isHolding = false;
+int currentHotkey = VK_NUMPAD0;
 
-// Prototipo de funciones
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
@@ -23,15 +28,48 @@ void SimulateAltNumpad(int number) {
     keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
 }
 
+void ShowWindow() {
+    ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
+}
+
 void CreateTrayIcon(HWND hwnd) {
     nid.cbSize = sizeof(NOTIFYICONDATAW);
     nid.hWnd = hwnd;
     nid.uID = ID_TRAYICON;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIconW(NULL, MAKEINTRESOURCEW(32512));  
-    wcscpy(nid.szTip, L"Discord Mute/Deafen Tool");
+    nid.hIcon = LoadIconW(NULL, MAKEINTRESOURCEW(32512));
+    wcscpy(nid.szTip, L"Discord Mute/Deafen Tool - Doble click para abrir");
     Shell_NotifyIconW(NIM_ADD, &nid);
+}
+
+void CreateControls(HWND hwnd) {
+    CreateWindowW(L"STATIC", L"Selecciona la tecla de atajo:",
+                 WS_VISIBLE | WS_CHILD,
+                 10, 10, 200, 20,
+                 hwnd, NULL, NULL, NULL);
+
+    hHotkey = CreateWindowW(HOTKEY_CLASS, L"",
+                          WS_VISIBLE | WS_CHILD | WS_BORDER,
+                          10, 40, 200, 25,
+                          hwnd, (HMENU)ID_HOTKEY, NULL, NULL);
+
+    SendMessage(hHotkey, HKM_SETHOTKEY, MAKEWORD(currentHotkey, 0), 0);
+
+    hApply = CreateWindowW(L"BUTTON", L"Aplicar",
+                         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                         10, 80, 100, 30,
+                         hwnd, (HMENU)ID_APPLY, NULL, NULL);
+}
+
+void UpdateHotkey() {
+    WORD hotkeyValue = LOWORD(SendMessage(hHotkey, HKM_GETHOTKEY, 0, 0));
+    currentHotkey = LOBYTE(hotkeyValue);
+}
+
+bool IsWindowVisible() {
+    return IsWindowVisible(hwnd);
 }
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -40,11 +78,11 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
         KBDLLHOOKSTRUCT* kbStruct = (KBDLLHOOKSTRUCT*)lParam;
         
-        if (kbStruct->vkCode == VK_NUMPAD0) {
+        if (kbStruct->vkCode == currentHotkey) {
             if (wParam == WM_KEYDOWN && !isHolding) {
                 lastKeyPress = GetTickCount();
                 isHolding = true;
-                hasTriggeredDeafen = false; 
+                hasTriggeredDeafen = false;
             }
             else if (wParam == WM_KEYUP) {
                 DWORD currentTime = GetTickCount();
@@ -52,7 +90,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     SimulateAltNumpad(9);
                 }
                 isHolding = false;
-                hasTriggeredDeafen = false; 
+                hasTriggeredDeafen = false;
             }
             
             if (isHolding && !hasTriggeredDeafen && GetTickCount() - lastKeyPress >= 100) {
@@ -60,7 +98,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 hasTriggeredDeafen = true;
             }
             
-            return 1; 
+            return 1;
         }
     }
     return CallNextHookEx(NULL, nCode, wParam, lParam);
@@ -68,12 +106,27 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+        case WM_CREATE:
+            CreateControls(hwnd);
+            break;
+
         case WM_TRAYICON:
-            if (lParam == WM_RBUTTONUP) {
+            if (lParam == WM_LBUTTONDBLCLK) {
+                if (!IsWindowVisible()) {
+                    ShowWindow();
+                }
+            }
+            else if (lParam == WM_RBUTTONUP) {
                 POINT pt;
                 GetCursorPos(&pt);
                 HMENU menu = CreatePopupMenu();
-                AppendMenuW(menu, MF_STRING, ID_EXIT, L"Exit");
+                
+                if (!IsWindowVisible()) {
+                    AppendMenuW(menu, MF_STRING, ID_SHOW, L"Mostrar");
+                    AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
+                }
+                
+                AppendMenuW(menu, MF_STRING, ID_EXIT, L"Salir");
                 SetForegroundWindow(hwnd);
                 TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, NULL);
                 DestroyMenu(menu);
@@ -81,10 +134,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
             
         case WM_COMMAND:
-            if (LOWORD(wParam) == ID_EXIT) {
-                DestroyWindow(hwnd);
+            switch (LOWORD(wParam)) {
+                case ID_EXIT:
+                    DestroyWindow(hwnd);
+                    break;
+                case ID_SHOW:
+                    if (!IsWindowVisible()) {
+                        ShowWindow();
+                    }
+                    break;
+                case ID_APPLY:
+                    UpdateHotkey();
+                    MessageBoxW(hwnd, L"Tecla actualizada correctamente", L"Éxito", MB_OK | MB_ICONINFORMATION);
+                    break;
             }
             break;
+            
+        case WM_CLOSE:
+            ShowWindow(hwnd, SW_HIDE);
+            return 0;
             
         case WM_DESTROY:
             Shell_NotifyIconW(NIM_DELETE, &nid);
@@ -98,16 +166,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    INITCOMMONCONTROLSEX icex;
+    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    icex.dwICC = ICC_HOTKEY_CLASS;
+    InitCommonControlsEx(&icex);
+    
     WNDCLASSEXW wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"DiscordMuteDeafenClass";
     RegisterClassExW(&wc);
     
     hwnd = CreateWindowExW(0, L"DiscordMuteDeafenClass", L"Discord Mute/Deafen Tool",
-                         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                         400, 300, NULL, NULL, hInstance, NULL);
+                         WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
+                         CW_USEDEFAULT, CW_USEDEFAULT,
+                         250, 160, NULL, NULL, hInstance, NULL);
     
     if (!hwnd) {
         return 1;
@@ -120,7 +196,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     if (!keyboardHook) {
         return 1;
     }
-    
+
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
         WCHAR path[MAX_PATH];
@@ -129,6 +205,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         }
         RegCloseKey(hKey);
     }
+    
+    ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
     
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
